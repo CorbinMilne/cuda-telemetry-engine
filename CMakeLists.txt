@@ -45,3 +45,33 @@ if(BUILD_TESTING)
     target_compile_options(generator_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME telemetry_generation COMMAND generator_tests)
 endif()
+
+option(TELEMETRY_ENABLE_CUDA "Build the CUDA backend" OFF)
+
+if(TELEMETRY_ENABLE_CUDA)
+    enable_language(CUDA)
+
+    add_library(telemetry_cuda src/validation_cuda.cu)
+
+    target_include_directories(telemetry_cuda
+        PUBLIC ${PROJECT_SOURCE_DIR}/include
+    )
+
+    set_target_properties(telemetry_cuda PROPERTIES
+        CUDA_STANDARD 20
+        CUDA_STANDARD_REQUIRED ON
+        CUDA_EXTENSIONS OFF
+    )
+
+    if(BUILD_TESTING)
+        add_executable(telemetry_cuda_tests
+            tests/validation_cuda_tests.cpp
+        )
+
+        target_link_libraries(telemetry_cuda_tests
+            PRIVATE telemetry_cuda
+        )
+
+        add_test(NAME cuda_validation COMMAND telemetry_cuda_tests)
+    endif()
+endif()
