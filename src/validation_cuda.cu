@@ -11,6 +11,15 @@
 namespace telemetry {
 namespace {
 
+// The halving reduction requires a power-of-two block size.
+constexpr unsigned int threads_per_block = 256;
+
+struct BlockSummary {
+    std::size_t violation_count;
+    double max_absolute_error;
+    double squared_error_sum;
+};
+
 void check_cuda(cudaError_t status) {
     if (status != cudaSuccess) {
         throw std::runtime_error(cudaGetErrorString(status));
@@ -21,7 +30,7 @@ void check_cuda(cudaError_t status) {
 struct GpuBuffers {
     float* measurements = nullptr;
     float* references = nullptr;
-    double* errors = nullptr;
+    BlockSummary* summaries = nullptr;
 
     GpuBuffers() = default;
     GpuBuffers(const GpuBuffers&) = delete;
@@ -30,28 +39,53 @@ struct GpuBuffers {
     ~GpuBuffers() {
         if (measurements) cudaFree(measurements);
         if (references) cudaFree(references);
-        if (errors) cudaFree(errors);
+        if (summaries) cudaFree(summaries);
     }
 };
 
-__global__ void calculate_errors(
+__global__ void summarize_blocks(
     const float* measurements,
     const float* references,
-    double* errors,
-    std::size_t count
+    BlockSummary* summaries,
+    std::size_t count,
+    double threshold
 ) {
+    __shared__ BlockSummary partials[threads_per_block];
+    const unsigned int thread = threadIdx.x;
     const std::size_t index =
         static_cast<std::size_t>(blockIdx.x) * blockDim.x
-        + threadIdx.x;
+        + thread;
 
-    if (index >= count) {
-        return;
+    // Unused threads contribute zeros and still reach every block barrier.
+    BlockSummary local{};
+    if (index < count) {
+        const double error = fabs(
+            static_cast<double>(measurements[index]) -
+            static_cast<double>(references[index])
+        );
+        local.violation_count = error > threshold ? 1 : 0;
+        local.max_absolute_error = error;
+        local.squared_error_sum = error * error;
+    }
+    partials[thread] = local;
+    __syncthreads();
+
+    for (unsigned int stride = threads_per_block / 2; stride > 0; stride /= 2) {
+        if (thread < stride) {
+            partials[thread].violation_count += partials[thread + stride].violation_count;
+            partials[thread].max_absolute_error = fmax(
+                partials[thread].max_absolute_error,
+                partials[thread + stride].max_absolute_error
+            );
+            partials[thread].squared_error_sum += partials[thread + stride].squared_error_sum;
+        }
+        // Finish this stage before any thread reads the next stage's inputs.
+        __syncthreads();
     }
 
-    errors[index] = fabs(
-        static_cast<double>(measurements[index]) -
-        static_cast<double>(references[index])
-    );
+    if (thread == 0) {
+        summaries[blockIdx.x] = partials[0];
+    }
 }
 
 } // namespace
@@ -91,7 +125,6 @@ ValidationResult validate_cuda(
         return result;
     }
 
-    constexpr unsigned int threads_per_block = 256;
     const std::size_t block_count =
         (count - 1) / threads_per_block + 1;
 
@@ -99,14 +132,14 @@ ValidationResult validate_cuda(
         throw std::length_error("Too many samples for this CUDA launch");
     }
 
-    std::vector<double> errors(count);
+    std::vector<BlockSummary> summaries(block_count);
     const std::size_t input_bytes = count * sizeof(float);
-    const std::size_t output_bytes = count * sizeof(double);
+    const std::size_t output_bytes = block_count * sizeof(BlockSummary);
 
     GpuBuffers gpu;
     check_cuda(cudaMalloc(&gpu.measurements, input_bytes));
     check_cuda(cudaMalloc(&gpu.references, input_bytes));
-    check_cuda(cudaMalloc(&gpu.errors, output_bytes));
+    check_cuda(cudaMalloc(&gpu.summaries, output_bytes));
 
     check_cuda(cudaMemcpy(
         gpu.measurements, measurements.data(), input_bytes,
@@ -117,30 +150,29 @@ ValidationResult validate_cuda(
         cudaMemcpyHostToDevice
     ));
 
-    calculate_errors<<<
+    summarize_blocks<<<
         static_cast<unsigned int>(block_count), threads_per_block
-    >>>(gpu.measurements, gpu.references, gpu.errors, count);
+    >>>(gpu.measurements, gpu.references, gpu.summaries, count,
+        static_cast<double>(threshold));
 
     check_cuda(cudaGetLastError());
     check_cuda(cudaDeviceSynchronize());
 
     check_cuda(cudaMemcpy(
-        errors.data(), gpu.errors, output_bytes,
+        summaries.data(), gpu.summaries, output_bytes,
         cudaMemcpyDeviceToHost
     ));
 
-    // shortcut: summarize on CPU until a GPU reduction is implemented.
+    // shortcut: merge block summaries on CPU until a final GPU reduction is added.
     double squared_error_sum = 0.0;
 
-    for (const double error : errors) {
-        if (error > static_cast<double>(threshold)) {
-            ++result.violation_count;
-        }
+    for (const BlockSummary& summary : summaries) {
+        result.violation_count += summary.violation_count;
 
         result.max_absolute_error =
-            std::max(result.max_absolute_error, error);
+            std::max(result.max_absolute_error, summary.max_absolute_error);
 
-        squared_error_sum += error * error;
+        squared_error_sum += summary.squared_error_sum;
     }
 
     result.mean_squared_error =

@@ -69,7 +69,7 @@ if(TELEMETRY_ENABLE_CUDA)
         )
 
         target_link_libraries(telemetry_cuda_tests
-            PRIVATE telemetry_cuda
+            PRIVATE telemetry_cuda telemetry_cpu
         )
 
         add_test(NAME cuda_validation COMMAND telemetry_cuda_tests)

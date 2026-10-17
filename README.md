@@ -5,10 +5,10 @@ automated correctness tests, CPU performance measurements, and an
 optional CUDA backend.
 
 **Current status:** The CPU implementation runs on an Apple Silicon Mac.
-The initial CUDA backend has passed two correctness cases on an NVIDIA
-T4 in Google Colab. It calculates absolute errors on the GPU and
-aggregates summary statistics on the CPU. GPU performance has not
-yet been measured.
+The CUDA block-reduction backend passed nine correctness cases on an NVIDIA
+T4 in Google Colab, including a CPU comparison with 1,000,003 samples.
+The GPU produces one summary per block; the CPU combines those summaries.
+GPU performance has not yet been measured.
 
 ## What it does
 
@@ -70,6 +70,17 @@ The CUDA test executable checks:
 
 - A four-sample example with independently calculated expected statistics.
 - A 257-sample example spanning two GPU blocks.
+- Errors below, equal to, and above the threshold.
+- Empty inputs returning zero statistics.
+- Unequal input lengths being rejected.
+- Negative and nonfinite thresholds being rejected, including for empty inputs.
+- NaN and infinity being rejected in either input array.
+- A seeded 1,000,003-sample dataset compared with the CPU reference.
+- Perfectly matching samples at a zero threshold.
+
+The CPU comparison requires exact counts and maximum error. MSE uses a
+tolerance of `1e-12 + 1e-10 * abs(cpu_mse)` to allow small differences from
+floating-point addition order. These cases test correctness, not speed.
 
 To see the individual CUDA case results:
 
@@ -77,9 +88,15 @@ To see the individual CUDA case results:
 ./build-cuda/telemetry_cuda_tests
 ```
 
-The backend validates inputs on the CPU, copies them to the GPU, calculates
-absolute errors in parallel, and copies those errors back for CPU aggregation.
-GPU edge-case coverage is still being expanded.
+The current backend validates inputs on the CPU and copies them to the GPU.
+Each 256-thread block computes one summary containing a violation count,
+maximum absolute error, and squared-error sum. Threads combine their results
+in shared memory, synchronizing between reduction stages. Threads beyond the
+input size contribute zeros and still participate in synchronization.
+
+Only block summaries are copied back. The CPU combines them and divides the
+total squared-error sum by the sample count to obtain MSE. This intermediate
+step leaves the final merge on the CPU; a final GPU reduction is planned.
 
 The `telemetry_engine` command-line program still uses the CPU backend.
 Enabling CUDA builds the CUDA library and tests; it does not switch the CLI
@@ -144,9 +161,7 @@ CMakeLists.txt   Build and test configuration
 
 ## Next steps
 
-- Add CUDA tests for threshold equality, empty inputs, and invalid inputs.
-- Compare larger GPU results against the CPU reference.
-- Move summary aggregation onto the GPU using parallel reductions.
+- Move the final merge of block summaries onto the GPU.
 - Measure kernel execution separately from time including data transfers.
 
 ## License
