@@ -8,6 +8,7 @@
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <vector>
 
 namespace {
 
@@ -189,6 +190,28 @@ void generated_data_matches_cpu() {
     );
 }
 
+void final_reduction_tail() {
+    // 65,537 samples produce 257 summaries, requiring a second loop iteration.
+    constexpr std::size_t count = 65'537;
+    std::vector<float> measurements(count, 0.0F);
+    const std::vector<float> references(count, 0.0F);
+    measurements[0] = 1.0F;
+    measurements[count - 2] = 2.0F;
+    measurements[count - 1] = 4.0F;
+
+    const auto result = telemetry::validate_cuda(measurements, references, 0.5F);
+
+    require(result.sample_count == count, "Wrong sample count");
+    require(result.violation_count == 3, "Final reduction lost a violation");
+    require(result.max_absolute_error == 4.0, "Final reduction lost the largest error");
+    const double expected_mse = 21.0 / static_cast<double>(count);
+    require(
+        std::isfinite(result.mean_squared_error) &&
+        std::abs(result.mean_squared_error - expected_mse) <= 1e-12,
+        "Final reduction has the wrong MSE"
+    );
+}
+
 } // namespace
 
 int main() {
@@ -229,6 +252,10 @@ int main() {
         current_test = "generated data matches CPU";
         generated_data_matches_cpu();
         std::cout << "PASS: CUDA generated data matches CPU\n";
+
+        current_test = "final reduction tail";
+        final_reduction_tail();
+        std::cout << "PASS: CUDA final reduction tail\n";
 
         return 0;
     } catch (const std::exception& error) {

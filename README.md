@@ -5,9 +5,10 @@ automated correctness tests, CPU performance measurements, and an
 optional CUDA backend.
 
 **Current status:** The CPU implementation runs on an Apple Silicon Mac.
-The CUDA block-reduction backend passed nine correctness cases on an NVIDIA
-T4 in Google Colab, including a CPU comparison with 1,000,003 samples.
-The GPU produces one summary per block; the CPU combines those summaries.
+The CUDA backend passed ten correctness cases on an
+NVIDIA T4 in Google Colab, including a CPU comparison with 1,000,003 samples.
+It calculates errors and merges block summaries on the GPU, returning one
+summary to the CPU for the final MSE division.
 GPU performance has not yet been measured.
 
 ## What it does
@@ -77,6 +78,8 @@ The CUDA test executable checks:
 - NaN and infinity being rejected in either input array.
 - A seeded 1,000,003-sample dataset compared with the CPU reference.
 - Perfectly matching samples at a zero threshold.
+- A 65,537-sample example with 257 block summaries, checking that the final
+  reduction includes summaries beyond its first 256 entries.
 
 The CPU comparison requires exact counts and maximum error. MSE uses a
 tolerance of `1e-12 + 1e-10 * abs(cpu_mse)` to allow small differences from
@@ -94,9 +97,15 @@ maximum absolute error, and squared-error sum. Threads combine their results
 in shared memory, synchronizing between reduction stages. Threads beyond the
 input size contribute zeros and still participate in synchronization.
 
-Only block summaries are copied back. The CPU combines them and divides the
-total squared-error sum by the sample count to obtain MSE. This intermediate
-step leaves the final merge on the CPU; a final GPU reduction is planned.
+A second kernel uses one 256-thread block to combine the block summaries.
+Each thread processes every 256th summary, then the block reduces those
+partial results using the same shared-memory routine. Both kernels run in
+the same stream, so the second starts after the first has finished.
+
+Only one summary is copied back. The CPU already knows the sample count and
+divides the final squared-error sum by it to obtain MSE. The final kernel's
+single-block design keeps this implementation simple; multiple reduction
+passes can be added if profiling shows that stage becomes a bottleneck.
 
 The `telemetry_engine` command-line program still uses the CPU backend.
 Enabling CUDA builds the CUDA library and tests; it does not switch the CLI
@@ -161,7 +170,6 @@ CMakeLists.txt   Build and test configuration
 
 ## Next steps
 
-- Move the final merge of block summaries onto the GPU.
 - Measure kernel execution separately from time including data transfers.
 
 ## License
