@@ -1,0 +1,46 @@
+# Exercise the executable so parsing, backend selection, and linking are tested together.
+function(check_cli expected_status expected_text)
+    execute_process(
+        COMMAND "${ENGINE}" ${ARGN}
+        RESULT_VARIABLE status
+        OUTPUT_VARIABLE output
+        ERROR_VARIABLE error
+    )
+    if(NOT "${status}" STREQUAL "${expected_status}")
+        message(FATAL_ERROR "Arguments: ${ARGN}\nExpected exit ${expected_status}, got ${status}\n${output}${error}")
+    endif()
+    string(FIND "${output}${error}" "${expected_text}" match)
+    if(match EQUAL -1)
+        message(FATAL_ERROR "Arguments: ${ARGN}\nMissing: ${expected_text}\n${output}${error}")
+    endif()
+    set(cli_output "${output}" PARENT_SCOPE)
+endfunction()
+
+check_cli(0 "Backend: cpu" --backend cpu --samples 257)
+string(FIND "${cli_output}" "GPU kernel interval" gpu_timing)
+if(NOT gpu_timing EQUAL -1)
+    message(FATAL_ERROR "CPU output must not report GPU timing")
+endif()
+string(FIND "${cli_output}" "CPU input scan time" scan_timing)
+if(NOT scan_timing EQUAL -1)
+    message(FATAL_ERROR "CPU backend output must not report CUDA input scan timing")
+endif()
+check_cli(0 "Backend: cpu" --samples 257)
+check_cli(0 "--backend" --help)
+check_cli(1 "Backend must be cpu or cuda" --backend invalid)
+check_cli(1 "Missing value after --backend" --backend)
+
+if(CUDA_ENABLED)
+    check_cli(0 "Backend: cuda" --backend cuda --samples 257)
+    string(REGEX MATCH "Median GPU kernel interval \\(ms\\): [0-9]+(\\.[0-9]+)?([eE][-+]?[0-9]+)?" gpu_timing "${cli_output}")
+    if(gpu_timing STREQUAL "")
+        message(FATAL_ERROR "CUDA output must report a nonnegative numeric kernel interval\n${cli_output}")
+    endif()
+    string(FIND "${cli_output}" "CPU input scan time" scan_timing)
+    if(NOT scan_timing EQUAL -1)
+        message(FATAL_ERROR "CUDA output must not report the removed CPU scan timer\n${cli_output}")
+    endif()
+    check_cli(0 "Median GPU kernel interval (ms): 0" --backend cuda --samples 0)
+else()
+    check_cli(1 "CUDA backend is unavailable in this build" --backend cuda --samples 257)
+endif()

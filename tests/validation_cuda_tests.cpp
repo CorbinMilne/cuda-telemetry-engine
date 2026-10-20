@@ -38,8 +38,14 @@ void known_errors() {
         10.0F, 10.0F, 10.0F, 10.0F
     };
 
+    float kernel_time_ms = -1.0F;
     const auto result = telemetry::validate_cuda(
-        measurements, references, 1.0F
+        measurements, references, 1.0F, &kernel_time_ms
+    );
+
+    require(
+        std::isfinite(kernel_time_ms) && kernel_time_ms >= 0.0F,
+        "Kernel interval must be finite and nonnegative"
     );
 
     require(result.sample_count == 4, "Wrong sample count");
@@ -99,8 +105,12 @@ void threshold_boundary() {
 }
 
 void empty_input() {
-    const auto result = telemetry::validate_cuda({}, {}, 1.0F);
+    float kernel_time_ms = -1.0F;
+    const auto result = telemetry::validate_cuda(
+        {}, {}, 1.0F, &kernel_time_ms
+    );
 
+    require(kernel_time_ms == 0.0F, "Empty input must have zero kernel time");
     require(result.sample_count == 0, "Empty sample count must be zero");
     require(result.violation_count == 0, "Empty violation count must be zero");
     require(result.max_absolute_error == 0.0, "Empty maximum error must be zero");
@@ -110,7 +120,6 @@ void empty_input() {
 void perfect_match_zero_threshold() {
     const std::array<float, 3> values{-2.0F, 0.0F, 8.0F};
     const auto result = telemetry::validate_cuda(values, values, 0.0F);
-
     require(result.sample_count == values.size(), "Wrong sample count");
     require(result.violation_count == 0, "Matching samples must not violate a zero threshold");
     require(result.max_absolute_error == 0.0, "Matching samples must have zero maximum error");
@@ -157,6 +166,66 @@ void nonfinite_samples() {
             telemetry::validate_cuda(valid, mixed, 1.0F);
         });
     }
+}
+
+void nonfinite_reduction_boundaries() {
+    // 257 summaries exercise both the first kernel's tail and the final kernel's stride.
+    constexpr std::size_t count = 65'537;
+    std::vector<float> measurements(count, 0.0F);
+    std::vector<float> references(count, 0.0F);
+    const std::array<std::size_t, 5> positions{0, 255, 256, count - 2, count - 1};
+    const std::array<float, 3> invalid_values{
+        std::numeric_limits<float>::quiet_NaN(),
+        std::numeric_limits<float>::infinity(), -std::numeric_limits<float>::infinity()
+    };
+
+    for (const std::size_t position : positions) {
+        for (const float invalid : invalid_values) {
+            measurements[position] = invalid;
+            require_invalid_argument([&] {
+                telemetry::validate_cuda(measurements, references, 1.0F);
+            });
+            measurements[position] = 0.0F;
+
+            references[position] = invalid;
+            require_invalid_argument([&] {
+                telemetry::validate_cuda(measurements, references, 1.0F);
+            });
+            references[position] = 0.0F;
+        }
+    }
+
+    // Every active thread takes the invalid branch, including in the partial block.
+    const std::vector<float> all_invalid(count, std::numeric_limits<float>::quiet_NaN());
+    float kernel_time_ms = -1.0F;
+    require_invalid_argument([&] {
+        telemetry::validate_cuda(all_invalid, references, 1.0F, &kernel_time_ms);
+    });
+
+    const auto valid = telemetry::validate_cuda(measurements, references, 1.0F);
+    require(valid.sample_count == count && valid.violation_count == 0 &&
+            valid.max_absolute_error == 0.0 && valid.mean_squared_error == 0.0,
+            "Valid input must still succeed after nonfinite batches are rejected");
+}
+
+void extreme_finite_samples() {
+    const float largest = std::numeric_limits<float>::max();
+    const std::array<float, 4> measurements{
+        largest, -largest, std::numeric_limits<float>::denorm_min(), -0.0F
+    };
+    const std::array<float, 4> references{-largest, largest, 0.0F, 0.0F};
+    const auto cpu = telemetry::validate(measurements, references, 0.0F);
+    const auto gpu = telemetry::validate_cuda(measurements, references, 0.0F);
+
+    require(gpu.sample_count == cpu.sample_count, "Extreme finite sample counts differ");
+    require(gpu.violation_count == cpu.violation_count, "Extreme finite violation counts differ");
+    require(std::isfinite(gpu.max_absolute_error) &&
+            gpu.max_absolute_error == cpu.max_absolute_error,
+            "Finite float inputs must be converted to double before subtraction");
+    require(std::isfinite(gpu.mean_squared_error) &&
+            std::abs(gpu.mean_squared_error - cpu.mean_squared_error) <=
+                1e-10 * cpu.mean_squared_error,
+            "Extreme finite MSE differs from CPU");
 }
 
 void generated_data_matches_cpu() {
@@ -248,6 +317,14 @@ int main() {
         current_test = "nonfinite samples";
         nonfinite_samples();
         std::cout << "PASS: CUDA nonfinite samples\n";
+
+        current_test = "nonfinite reduction boundaries";
+        nonfinite_reduction_boundaries();
+        std::cout << "PASS: CUDA nonfinite reduction boundaries\n";
+
+        current_test = "extreme finite samples";
+        extreme_finite_samples();
+        std::cout << "PASS: CUDA extreme finite samples\n";
 
         current_test = "generated data matches CPU";
         generated_data_matches_cpu();

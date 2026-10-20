@@ -33,6 +33,7 @@ target_link_libraries(telemetry_engine
 )
 
 # CTest supplies BUILD_TESTING and registers tests for the ctest command.
+option(TELEMETRY_ENABLE_CUDA "Build the CUDA backend" OFF)
 include(CTest)
 if(BUILD_TESTING)
     add_executable(telemetry_tests tests/validation_tests.cpp)
@@ -44,9 +45,13 @@ if(BUILD_TESTING)
     target_link_libraries(generator_tests PRIVATE telemetry_cpu)
     target_compile_options(generator_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME telemetry_generation COMMAND generator_tests)
-endif()
 
-option(TELEMETRY_ENABLE_CUDA "Build the CUDA backend" OFF)
+    add_test(NAME cli_backend COMMAND ${CMAKE_COMMAND}
+        -DENGINE=$<TARGET_FILE:telemetry_engine>
+        -DCUDA_ENABLED=${TELEMETRY_ENABLE_CUDA}
+        -P ${PROJECT_SOURCE_DIR}/tests/cli_tests.cmake
+    )
+endif()
 
 if(TELEMETRY_ENABLE_CUDA)
     enable_language(CUDA)
@@ -62,6 +67,9 @@ if(TELEMETRY_ENABLE_CUDA)
         CUDA_STANDARD_REQUIRED ON
         CUDA_EXTENSIONS OFF
     )
+
+    target_link_libraries(telemetry_engine PRIVATE telemetry_cuda)
+    target_compile_definitions(telemetry_engine PRIVATE TELEMETRY_ENABLE_CUDA=1)
 
     if(BUILD_TESTING)
         add_executable(telemetry_cuda_tests

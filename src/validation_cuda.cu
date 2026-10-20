@@ -16,12 +16,14 @@ struct BlockSummary {
     std::size_t violation_count;
     double max_absolute_error;
     double squared_error_sum;
+    bool has_nonfinite;
 };
 
 __device__ void merge_summary(BlockSummary& total, const BlockSummary& other) {
     total.violation_count += other.violation_count;
     total.max_absolute_error = fmax(total.max_absolute_error, other.max_absolute_error);
     total.squared_error_sum += other.squared_error_sum;
+    total.has_nonfinite = total.has_nonfinite || other.has_nonfinite;
 }
 
 // Every thread in a 256-thread block must call this after writing its entry.
@@ -43,6 +45,21 @@ void check_cuda(cudaError_t status) {
         throw std::runtime_error(cudaGetErrorString(status));
     }
 }
+
+// Keep partially created event pairs safe if a later CUDA operation throws.
+struct GpuEvents {
+    cudaEvent_t start = nullptr;
+    cudaEvent_t stop = nullptr;
+
+    GpuEvents() = default;
+    GpuEvents(const GpuEvents&) = delete;
+    GpuEvents& operator=(const GpuEvents&) = delete;
+
+    ~GpuEvents() {
+        if (start) cudaEventDestroy(start);
+        if (stop) cudaEventDestroy(stop);
+    }
+};
 
 // Release every successful allocation, even if a later operation throws.
 struct GpuBuffers {
@@ -79,13 +96,18 @@ __global__ void summarize_blocks(
     // Unused threads contribute zeros and still reach every block barrier.
     BlockSummary local{};
     if (index < count) {
-        const double error = fabs(
-            static_cast<double>(measurements[index]) -
-            static_cast<double>(references[index])
-        );
-        local.violation_count = error > threshold ? 1 : 0;
-        local.max_absolute_error = error;
-        local.squared_error_sum = error * error;
+        const float measurement = measurements[index];
+        const float reference = references[index];
+        local.has_nonfinite = !isfinite(measurement) || !isfinite(reference);
+        // Invalid pairs skip arithmetic, but their threads must still reach every barrier.
+        if (!local.has_nonfinite) {
+            const double error = fabs(
+                static_cast<double>(measurement) - static_cast<double>(reference)
+            );
+            local.violation_count = error > threshold ? 1 : 0;
+            local.max_absolute_error = error;
+            local.squared_error_sum = error * error;
+        }
     }
     partials[thread] = local;
     reduce_block(partials);
@@ -121,7 +143,8 @@ __global__ void finalize_summary(
 ValidationResult validate_cuda(
     std::span<const float> measurements,
     std::span<const float> references,
-    float threshold
+    float threshold,
+    float* kernel_time_ms
 ) {
     if (measurements.size() != references.size()) {
         throw std::invalid_argument(
@@ -137,19 +160,13 @@ ValidationResult validate_cuda(
 
     const std::size_t count = measurements.size();
 
-    for (std::size_t index = 0; index < count; ++index) {
-        if (!std::isfinite(measurements[index]) ||
-            !std::isfinite(references[index])) {
-            throw std::invalid_argument(
-                "Measurements and references must contain only finite values"
-            );
-        }
-    }
-
     ValidationResult result{};
     result.sample_count = count;
 
     if (count == 0) {
+        if (kernel_time_ms) {
+            *kernel_time_ms = 0.0F;
+        }
         return result;
     }
 
@@ -178,6 +195,13 @@ ValidationResult validate_cuda(
         cudaMemcpyHostToDevice
     ));
 
+    GpuEvents events;
+    if (kernel_time_ms) {
+        check_cuda(cudaEventCreate(&events.start));
+        check_cuda(cudaEventCreate(&events.stop));
+        check_cuda(cudaEventRecord(events.start));
+    }
+
     summarize_blocks<<<
         static_cast<unsigned int>(block_count), threads_per_block
     >>>(gpu.measurements, gpu.references, gpu.summaries, count,
@@ -191,13 +215,25 @@ ValidationResult validate_cuda(
         gpu.summaries, block_count, gpu.final_summary
     );
     check_cuda(cudaGetLastError());
-    check_cuda(cudaDeviceSynchronize());
+    if (kernel_time_ms) {
+        check_cuda(cudaEventRecord(events.stop));
+        check_cuda(cudaEventSynchronize(events.stop));
+        check_cuda(cudaEventElapsedTime(kernel_time_ms, events.start, events.stop));
+    } else {
+        check_cuda(cudaDeviceSynchronize());
+    }
 
     BlockSummary summary{};
     check_cuda(cudaMemcpy(
         &summary, gpu.final_summary, sizeof(summary),
         cudaMemcpyDeviceToHost
     ));
+
+    if (summary.has_nonfinite) {
+        throw std::invalid_argument(
+            "Measurements and references must contain only finite values"
+        );
+    }
 
     result.violation_count = summary.violation_count;
     result.max_absolute_error = summary.max_absolute_error;

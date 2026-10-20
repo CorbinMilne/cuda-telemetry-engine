@@ -1,0 +1,116 @@
+
+Pair 1, position 1, before
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 32.1724
+Median GPU kernel interval (ms): 1.20266
+Median CPU input scan time (ms): 10.9824
+Throughput (million samples/second): 310.825
+
+Pair 1, position 2, after
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 21.8898
+Median GPU kernel interval (ms): 1.80627
+Throughput (million samples/second): 456.834
+
+Pair 2, position 1, after
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 22.1508
+Median GPU kernel interval (ms): 2.34922
+Throughput (million samples/second): 451.451
+
+Pair 2, position 2, before
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 34.8394
+Median GPU kernel interval (ms): 1.75149
+Median CPU input scan time (ms): 11.2
+Throughput (million samples/second): 287.031
+
+Pair 3, position 1, before
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 33.8502
+Median GPU kernel interval (ms): 2.05885
+Median CPU input scan time (ms): 11.5697
+Throughput (million samples/second): 295.419
+
+Pair 3, position 2, after
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 22.8094
+Median GPU kernel interval (ms): 2.55946
+Throughput (million samples/second): 438.417
+
+Pair 4, position 1, after
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 22.757
+Median GPU kernel interval (ms): 2.55738
+Throughput (million samples/second): 439.425
+
+Pair 4, position 2, before
+Backend: cuda
+Seed: 42
+Threshold: 1
+Injected anomalies: 99914
+Samples: 10000000
+Violations: 99914
+Maximum absolute error: 5.24998
+Mean squared error: 0.270657
+Timed runs: 5
+Median complete validation time (ms): 38.1503
+Median GPU kernel interval (ms): 1.4408
+Median CPU input scan time (ms): 13.6248
+Throughput (million samples/second): 262.121

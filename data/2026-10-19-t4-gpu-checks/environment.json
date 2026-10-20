@@ -1,0 +1,14 @@
+{
+  "started_utc": "2026-10-19T23:37:50.191732+00:00",
+  "platform": "Linux-6.6.122+-x86_64-with-glibc2.39",
+  "cpu_model": "Intel(R) Xeon(R) CPU @ 2.00GHz",
+  "gpu": "Tesla T4, 580.82.07",
+  "samples": 10000000,
+  "seed": 42,
+  "threshold": 1.0,
+  "paired_trials": 4,
+  "executable_sha256": {
+    "before": "fc832836929f870618b9aa50aabd2fec84b3f26f74eeed1d56fd1f1a43546eb3",
+    "after": "3f70cea46a017c9913609e7be37095ada0992c13a0523ad52049049b55c6f6ef"
+  }
+}
