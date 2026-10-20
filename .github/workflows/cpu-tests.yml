@@ -1,0 +1,32 @@
+name: CPU tests
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  cpu-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Configure CPU build
+        run: >-
+          cmake -S . -B build-release
+          -DCMAKE_BUILD_TYPE=Release
+          -DTELEMETRY_ENABLE_CUDA=OFF
+          -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build-release --parallel 2
+
+      - name: Run C++ and CLI tests
+        run: ctest --test-dir build-release --output-on-failure
+
+      - name: Run Python benchmark tests
+        run: python3 -m unittest discover -s tests -p 'benchmark_tests.py'

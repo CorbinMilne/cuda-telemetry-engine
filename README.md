@@ -62,6 +62,18 @@ rejection of CUDA requests in CPU-only builds, and CSV loading and option
 conflicts. CSV tests check values, formatting, invalid rows, line numbers,
 empty datasets, and stream read failures.
 
+## Automatic CPU tests
+
+The [CPU tests workflow](.github/workflows/cpu-tests.yml) runs on pushes and
+pull requests. One Ubuntu 24.04 job builds Release mode with CUDA explicitly
+disabled, runs the four CTest suites, and runs the five Python benchmark tests.
+The Python tests use simulated subprocess output and require no GPU.
+
+See results and failure logs in the repository's
+[Actions tab](https://github.com/CorbinMilne/cuda-telemetry-engine/actions).
+These checks protect the CPU-only build. CUDA correctness and performance
+still require separate runs on NVIDIA hardware, such as Colab.
+
 ## Optional CUDA build
 
 CUDA builds require an NVIDIA GPU, a compatible driver, the CUDA Toolkit,
