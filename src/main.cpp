@@ -1,3 +1,4 @@
+#include "csv.hpp"
 #include "generator.hpp"
 #include "validation.hpp"
 
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstdint>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
@@ -54,10 +56,12 @@ void print_help() {
     std::cout
         << "Usage: telemetry_engine [options]\n\n"
         << "Options:\n"
+        << "  --input PATH    Load measurement,reference CSV instead of generating data\n"
         << "  --samples N     Number of samples (default: 1000)\n"
         << "  --threshold X   Allowed absolute error (default: 1.0)\n"
         << "  --seed N        Random seed (default: 42)\n"
         << "  --backend NAME  Validation backend: cpu or cuda (default: cpu)\n"
+        << "  --input cannot be combined with --samples or --seed\n"
         << "  --help          Show these instructions\n";
 }
 
@@ -66,6 +70,8 @@ int main(int argc, char* argv[]) {
         telemetry::GeneratorConfig config{};
         float threshold = 1.0F;
         std::string backend = "cpu";
+        std::string input_path;
+        bool generator_options_set = false;
 
         // argv[0] is the program name; options begin at argv[1].
         for (int index = 1; index < argc; ++index) {
@@ -79,6 +85,7 @@ int main(int argc, char* argv[]) {
             if (option != "--samples" &&
                 option != "--threshold" &&
                 option != "--seed" &&
+                option != "--input" &&
                 option != "--backend") {
                 throw std::invalid_argument("Unknown option: " + option);
             }
@@ -91,6 +98,7 @@ int main(int argc, char* argv[]) {
             const std::string value = argv[++index];
 
             if (option == "--samples") {
+                generator_options_set = true;
                 const auto count = parse_integer(value);
 
                 if (count > std::numeric_limits<std::size_t>::max()) {
@@ -103,6 +111,7 @@ int main(int argc, char* argv[]) {
             } else if (option == "--threshold") {
                 threshold = parse_threshold(value);
             } else if (option == "--seed") {
+                generator_options_set = true;
                 const auto seed = parse_integer(value);
 
                 if (seed > std::numeric_limits<std::uint32_t>::max()) {
@@ -112,12 +121,21 @@ int main(int argc, char* argv[]) {
                 }
 
                 config.seed = static_cast<std::uint32_t>(seed);
+            } else if (option == "--input") {
+                if (value.empty()) {
+                    throw std::invalid_argument("Input path must not be empty");
+                }
+                input_path = value;
             } else if (option == "--backend") {
                 if (value != "cpu" && value != "cuda") {
                     throw std::invalid_argument("Backend must be cpu or cuda");
                 }
                 backend = value;
             }
+        }
+
+        if (!input_path.empty() && generator_options_set) {
+            throw std::invalid_argument("--input cannot be combined with --samples or --seed");
         }
 
 #ifndef TELEMETRY_ENABLE_CUDA
@@ -129,8 +147,17 @@ int main(int argc, char* argv[]) {
         }
 #endif
 
-        // Generation and validation use the settings selected above.
-        const auto data = telemetry::generate_telemetry(config);
+        // Load or generate once, before the warm-up and timed validation calls.
+        telemetry::TelemetryData data;
+        if (input_path.empty()) {
+            data = telemetry::generate_telemetry(config);
+        } else {
+            std::ifstream input(input_path);
+            if (!input) {
+                throw std::runtime_error("Cannot open input file: " + input_path);
+            }
+            data = telemetry::read_csv(input);
+        }
 
         float kernel_time_ms = 0.0F;
         // Both timers observe the same validation call on the same input arrays.
@@ -169,17 +196,15 @@ int main(int argc, char* argv[]) {
         std::sort(durations_ms.begin(), durations_ms.end());
         const double median_ms = durations_ms[timed_runs / 2];
 
-        const auto injected = std::count(
-            data.anomaly_flags.begin(),
-            data.anomaly_flags.end(),
-            1
-        );
-
-        std::cout
-            << "Backend: " << backend << '\n'
-            << "Seed: " << config.seed << '\n'
-            << "Threshold: " << threshold << '\n'
-            << "Injected anomalies: " << injected << '\n'
+        std::cout << "Backend: " << backend << '\n';
+        if (input_path.empty()) {
+            const auto injected = std::count(data.anomaly_flags.begin(), data.anomaly_flags.end(), 1);
+            std::cout << "Seed: " << config.seed << '\n'
+                      << "Injected anomalies: " << injected << '\n';
+        } else {
+            std::cout << "Input file: " << input_path << '\n';
+        }
+        std::cout << "Threshold: " << threshold << '\n'
             << "Samples: " << result.sample_count << '\n'
             << "Violations: " << result.violation_count << '\n'
             << "Maximum absolute error: "

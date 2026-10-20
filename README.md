@@ -1,6 +1,6 @@
 # CUDA Telemetry Engine
 
-A C++20 telemetry validation engine with synthetic data generation,
+A C++20 telemetry validation engine with CSV input, synthetic data generation,
 automated correctness tests, CPU performance measurements, and an
 optional CUDA backend.
 
@@ -9,13 +9,18 @@ The CUDA implementation passed twelve correctness cases on an
 NVIDIA T4 in Google Colab, including a CPU comparison with 1,000,003 samples.
 It calculates errors and merges block summaries on the GPU, returning one
 summary to the CPU for the final MSE division.
-The CLI supports `--backend cpu|cuda`, with CPU as the default. All four
-CTest suites passed in Colab, including CUDA CLI execution and the CUDA event
-timing assertions. Preliminary complete-call and GPU interval timings are
+The CLI supports `--backend cpu|cuda`, with CPU as the default. All five
+CTest suites passed in Colab, including CSV input with both backends, CUDA
+CLI execution, and the CUDA event timing assertions. All five Python benchmark
+tests also passed. Preliminary complete-call and GPU interval timings are
 recorded below. Nonfinite-sample detection now runs in the first GPU kernel.
 In a same-runtime comparison at ten million samples, this change and removal
 of the diagnostic scan timer reduced complete CUDA validation time by 34.62%
 relative to the earlier instrumented CUDA implementation (1.53x speedup).
+CSV loading and its CLI integration also passed the four CPU-only CTest suites
+on the Mac. In Colab, both backends returned the expected example CSV results:
+4 samples, 2 violations at threshold 1.0, maximum absolute error 4.0, and MSE
+5.0625. This small example verifies correctness, not performance.
 
 ## What it does
 
@@ -53,7 +58,9 @@ ctest --test-dir build-release --output-on-failure
 CPU tests cover validation results, threshold boundaries, invalid inputs,
 extreme finite values, generator reproducibility, and generator configuration.
 CLI tests check backend selection, the CPU default, help, invalid arguments,
-and rejection of CUDA requests in CPU-only builds.
+rejection of CUDA requests in CPU-only builds, and CSV loading and option
+conflicts. CSV tests check values, formatting, invalid rows, line numbers,
+empty datasets, and stream read failures.
 
 ## Optional CUDA build
 
@@ -135,6 +142,7 @@ Enabling CUDA builds both backends into `telemetry_engine`. Select CUDA
 explicitly with `--backend cuda`; the default remains CPU. A CPU-only build
 rejects CUDA requests with an error rather than silently using the CPU.
 CUDA builds also run a CLI test that selects CUDA on 257 samples.
+The CLI suite also checks the CSV example and header-only input with both backends.
 Performance results below describe one measured workload, not a general speedup.
 
 ## Run
@@ -155,11 +163,56 @@ the program does not fall back to CPU execution.
 
 | Option | Purpose | Default |
 |---|---|---:|
-| `--samples` | Number of measurement/reference pairs | 1000 |
+| `--input` | Path to measurement/reference CSV; conflicts with `--samples` and `--seed` | Generate data |
+| `--samples` | Number of generated measurement/reference pairs | 1000 |
 | `--threshold` | Allowed absolute error | 1.0 |
-| `--seed` | Pseudorandom generator seed | 42 |
+| `--seed` | Pseudorandom generator seed for generated data | 42 |
 | `--backend` | Validation implementation: `cpu` or `cuda` | cpu |
 | `--help` | Show usage instructions | |
+
+## CSV input
+
+Load existing measurement/reference pairs instead of generating them:
+
+```sh
+./build-release/telemetry_engine --input data/example.csv --backend cpu --threshold 1.0
+```
+
+For CUDA, use the same arguments with `./build-cuda/telemetry_engine` and
+`--backend cuda` on an NVIDIA machine.
+
+The file must start with the header `measurement,reference`, followed by two
+unquoted numeric values per row:
+
+```csv
+measurement,reference
+10.0,10.0
+10.5,10.0
+8.0,10.0
+14.0,10.0
+```
+
+The [example file](data/example.csv) is a hand-written correctness example,
+not recorded sensor data. Measurements are observed values; references are
+the expected values in the same units. At threshold 1.0, the example produces
+4 samples, 2 violations, maximum absolute error 4.0, and MSE 5.0625.
+
+The reader accepts spaces or tabs around values, decimal scientific notation,
+and Unix or Windows line endings. Blank data lines are ignored. A file with
+only the header produces an empty dataset; a file without a header is rejected.
+Missing values, extra columns, quoted fields, invalid numbers, NaN, infinity,
+and values outside the representable float range are rejected with a line
+number. File open and read failures are reported as errors.
+
+`--input` cannot be combined with `--samples` or `--seed`, even if their values
+match the defaults. The file determines the sample count. File-input output
+identifies the input path and omits seed and injected-anomaly information,
+because the file does not provide those labels. Without `--input`, synthetic
+generation works as before.
+
+`read_csv(std::istream&)` fills the existing `TelemetryData` arrays. Its
+synthetic anomaly flags remain empty. The CPU and CUDA validators still accept
+the same array inputs and retain their own validation checks.
 
 ## Synthetic telemetry
 
@@ -180,8 +233,10 @@ The same configuration reproduces the dataset within the same standard-library e
 
 Validation runs once as a warm-up, followed by five timed runs on the same dataset. The program reports the median duration and derives throughput from that duration.
 
-Timing includes the complete validation call and excludes data generation and
-terminal output. For CUDA, this includes CPU length and threshold checks, GPU allocation,
+Timing includes the complete validation call and excludes data generation,
+CSV file loading and parsing, and terminal output. CSV measurements therefore
+describe validation of arrays already in memory, not total file-processing time.
+For CUDA, this includes CPU length and threshold checks, GPU allocation,
 both kernels, transfers in both directions, synchronization, GPU memory
 cleanup, and event creation/destruction when timing is requested.
 Each call allocates its buffers again; this measures the current API's
@@ -337,11 +392,11 @@ after updating the script. Its parser tests can run on the Mac.
 ## Project structure
 
 ```text
-include/         Generator and validator interfaces
+include/         CSV reader, generator, and validator interfaces
 src/             Implementations and command-line program
 tests/           Correctness tests
 benchmarks/      Python script for CPU/CUDA benchmark sweeps
-data/            Reserved for sample inputs and saved results
+data/            Example CSV input and saved benchmark results
 CMakeLists.txt   Build and test configuration
 ```
 

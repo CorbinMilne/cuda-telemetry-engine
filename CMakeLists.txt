@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(telemetry_cpu
     src/validation.cpp
     src/generator.cpp
+    src/csv.cpp
 )
 
 target_include_directories(telemetry_cpu
@@ -45,6 +46,11 @@ if(BUILD_TESTING)
     target_link_libraries(generator_tests PRIVATE telemetry_cpu)
     target_compile_options(generator_tests PRIVATE -Wall -Wextra -Wpedantic)
     add_test(NAME telemetry_generation COMMAND generator_tests)
+
+    add_executable(csv_tests tests/csv_tests.cpp)
+    target_link_libraries(csv_tests PRIVATE telemetry_cpu)
+    target_compile_options(csv_tests PRIVATE -Wall -Wextra -Wpedantic)
+    add_test(NAME csv_input COMMAND csv_tests)
 
     add_test(NAME cli_backend COMMAND ${CMAKE_COMMAND}
         -DENGINE=$<TARGET_FILE:telemetry_engine>

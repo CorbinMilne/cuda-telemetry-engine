@@ -20,6 +20,7 @@ struct TelemetryData {
     std::vector<float> measurements;
     std::vector<float> references;
     // One byte per sample: 1 means an offset was injected, not necessarily a violation.
+    // Only synthetic generation populates these flags; CSV input leaves them empty.
     std::vector<std::uint8_t> anomaly_flags;
 };
 
