@@ -130,9 +130,23 @@ validation. It does not replace existing project folders or require source ZIPs.
 Benchmark and sanitizer cells are disabled by default. Enable their switches
 to run them, then use the final cell to download the run log, source revision,
 and any benchmark records. After a runtime reset, rerun setup and the following
-cells. The notebook is stored without outputs; the notebook itself still needs
-a complete Colab run, although its underlying build and test commands have
-already been verified there.
+cells. The notebook is stored without outputs.
+
+The core demo passed in Colab on October 21, 2026 UTC, using a T4 and the
+notebook's pinned source commit `b34ee6e7bd7a9911d39c22b63e11875483bf7137`.
+Source checkout, environment checks, the CUDA build, all five CTest suites,
+all five Python tests, and both CSV demo commands completed successfully.
+CPU and CUDA each reported 4 samples, 2 violations at threshold 1.0, maximum
+absolute error 4.0, and MSE 5.0625.
+
+The downloaded records are preserved in the repository:
+
+- [Run log](data/2026-10-21-colab-demo/run.txt), saved unchanged from the
+  downloaded `run.log` with a `.txt` extension.
+- [Source revision](data/2026-10-21-colab-demo/source-revision.txt).
+
+The optional benchmark and sanitizer commands were not run in this notebook
+session. Their earlier results are documented separately below.
 
 ## Optional CUDA build
 

@@ -1,0 +1,160 @@
+Started UTC: 2026-10-21T02:39:44.698702+00:00
+
+Running: git clone https://github.com/CorbinMilne/cuda-telemetry-engine.git /content/telemetry-demo-zs0xgp9u/repo
+Cloning into '/content/telemetry-demo-zs0xgp9u/repo'...
+Exit status: 0
+
+Running: git checkout --detach b34ee6e7bd7a9911d39c22b63e11875483bf7137
+HEAD is now at b34ee6e Add automatic CPU and Python tests with GitHub Actions
+Exit status: 0
+
+Running: git rev-parse HEAD
+b34ee6e7bd7a9911d39c22b63e11875483bf7137
+Exit status: 0
+
+Running: nvidia-smi
+Wed Oct 21 02:39:45 2026       
++-----------------------------------------------------------------------------------------+
+| NVIDIA-SMI 580.82.07              Driver Version: 580.82.07      CUDA Version: 13.0     |
++-----------------------------------------+------------------------+----------------------+
+| GPU  Name                 Persistence-M | Bus-Id          Disp.A | Volatile Uncorr. ECC |
+| Fan  Temp   Perf          Pwr:Usage/Cap |           Memory-Usage | GPU-Util  Compute M. |
+|                                         |                        |               MIG M. |
+|=========================================+========================+======================|
+|   0  Tesla T4                       Off |   00000000:00:04.0 Off |                    0 |
+| N/A   40C    P8              9W /   70W |       0MiB /  15360MiB |      0%      Default |
+|                                         |                        |                  N/A |
++-----------------------------------------+------------------------+----------------------+
+
++-----------------------------------------------------------------------------------------+
+| Processes:                                                                              |
+|  GPU   GI   CI              PID   Type   Process name                        GPU Memory |
+|        ID   ID                                                               Usage      |
+|=========================================================================================|
+|  No running processes found                                                             |
++-----------------------------------------------------------------------------------------+
+Exit status: 0
+
+Running: nvcc --version
+nvcc: NVIDIA (R) Cuda compiler driver
+Copyright (c) 2005-2025 NVIDIA Corporation
+Built on Wed_Aug_20_01:58:59_PM_PDT_2025
+Cuda compilation tools, release 13.0, V13.0.88
+Build cuda_13.0.r13.0/compiler.36424714_0
+Exit status: 0
+
+Running: g++ --version
+g++ (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
+Copyright (C) 2023 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Exit status: 0
+
+Running: cmake --version
+cmake version 3.31.10
+
+CMake suite maintained and supported by Kitware (kitware.com/cmake).
+Exit status: 0
+
+Running: python3 --version
+Python 3.13.15
+Exit status: 0
+
+Running: cmake -S . -B build-cuda -DCMAKE_BUILD_TYPE=Release -DTELEMETRY_ENABLE_CUDA=ON -DBUILD_TESTING=ON -DCMAKE_CUDA_ARCHITECTURES=75
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- The CUDA compiler identification is NVIDIA 13.0.88 with host compiler GNU 13.3.0
+-- Detecting CUDA compiler ABI info
+-- Detecting CUDA compiler ABI info - done
+-- Check for working CUDA compiler: /usr/local/cuda/bin/nvcc - skipped
+-- Detecting CUDA compile features
+-- Detecting CUDA compile features - done
+-- Configuring done (4.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: /content/telemetry-demo-zs0xgp9u/repo/build-cuda
+Exit status: 0
+
+Running: cmake --build build-cuda --parallel 2
+[ 12%] Building CXX object CMakeFiles/telemetry_cpu.dir/src/validation.cpp.o
+[ 12%] Building CUDA object CMakeFiles/telemetry_cuda.dir/src/validation_cuda.cu.o
+[ 18%] Building CXX object CMakeFiles/telemetry_cpu.dir/src/generator.cpp.o
+[ 25%] Building CXX object CMakeFiles/telemetry_cpu.dir/src/csv.cpp.o
+[ 31%] Linking CXX static library libtelemetry_cpu.a
+[ 31%] Built target telemetry_cpu
+[ 37%] Linking CUDA static library libtelemetry_cuda.a
+[ 43%] Building CXX object CMakeFiles/telemetry_tests.dir/tests/validation_tests.cpp.o
+[ 43%] Built target telemetry_cuda
+[ 50%] Building CXX object CMakeFiles/generator_tests.dir/tests/generator_tests.cpp.o
+[ 56%] Linking CXX executable generator_tests
+[ 62%] Linking CXX executable telemetry_tests
+[ 62%] Built target telemetry_tests
+[ 62%] Built target generator_tests
+[ 75%] Building CXX object CMakeFiles/csv_tests.dir/tests/csv_tests.cpp.o
+[ 75%] Building CXX object CMakeFiles/telemetry_cuda_tests.dir/tests/validation_cuda_tests.cpp.o
+[ 81%] Linking CXX executable telemetry_cuda_tests
+[ 81%] Built target telemetry_cuda_tests
+[ 87%] Building CXX object CMakeFiles/telemetry_engine.dir/src/main.cpp.o
+[ 93%] Linking CXX executable csv_tests
+[ 93%] Built target csv_tests
+[100%] Linking CXX executable telemetry_engine
+[100%] Built target telemetry_engine
+Exit status: 0
+
+Running: ctest --test-dir build-cuda --output-on-failure
+Internal ctest changing into directory: /content/telemetry-demo-zs0xgp9u/repo/build-cuda
+Test project /content/telemetry-demo-zs0xgp9u/repo/build-cuda
+    Start 1: cpu_validation
+1/5 Test #1: cpu_validation ...................   Passed    0.00 sec
+    Start 2: telemetry_generation
+2/5 Test #2: telemetry_generation .............   Passed    0.00 sec
+    Start 3: csv_input
+3/5 Test #3: csv_input ........................   Passed    0.00 sec
+    Start 4: cli_backend
+4/5 Test #4: cli_backend ......................   Passed    0.77 sec
+    Start 5: cuda_validation
+5/5 Test #5: cuda_validation ..................   Passed    0.29 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =   1.08 sec
+Exit status: 0
+
+Running: python3 -m unittest discover -s tests -p benchmark_tests.py
+.....
+----------------------------------------------------------------------
+Ran 5 tests in 0.005s
+
+OK
+Exit status: 0
+
+Running: ./build-cuda/telemetry_engine --input data/example.csv --backend cpu --threshold 1.0
+Backend: cpu
+Input file: data/example.csv
+Threshold: 1
+Samples: 4
+Violations: 2
+Maximum absolute error: 4
+Mean squared error: 5.0625
+Timed runs: 5
+Median complete validation time (ms): 4.5e-05
+Throughput (million samples/second): 88.8889
+Exit status: 0
+
+Running: ./build-cuda/telemetry_engine --input data/example.csv --backend cuda --threshold 1.0
+Backend: cuda
+Input file: data/example.csv
+Threshold: 1
+Samples: 4
+Violations: 2
+Maximum absolute error: 4
+Mean squared error: 5.0625
+Timed runs: 5
+Median complete validation time (ms): 0.228403
+Median GPU kernel interval (ms): 0.023104
+Throughput (million samples/second): 0.0175129
+Exit status: 0
