@@ -21,6 +21,9 @@ CSV loading and its CLI integration also passed the four CPU-only CTest suites
 on the Mac. In Colab, both backends returned the expected example CSV results:
 4 samples, 2 violations at threshold 1.0, maximum absolute error 4.0, and MSE
 5.0625. This small example verifies correctness, not performance.
+All twelve CUDA cases also passed under Compute Sanitizer's memcheck,
+racecheck, initcheck, and synccheck on the T4, with no reported errors,
+leaks, or race hazards.
 
 ## What it does
 
@@ -73,6 +76,21 @@ See results and failure logs in the repository's
 [Actions tab](https://github.com/CorbinMilne/cuda-telemetry-engine/actions).
 These checks protect the CPU-only build. CUDA correctness and performance
 still require separate runs on NVIDIA hardware, such as Colab.
+
+## Colab demo
+
+Open [notebooks/cuda_telemetry_demo.ipynb](notebooks/cuda_telemetry_demo.ipynb)
+in Colab by uploading the notebook, select a T4 GPU runtime, and run the cells
+in order. The notebook clones a fixed, verified source commit into a new
+temporary folder, builds both backends, runs the tests, and demonstrates CSV
+validation. It does not replace existing project folders or require source ZIPs.
+
+Benchmark and sanitizer cells are disabled by default. Enable their switches
+to run them, then use the final cell to download the run log, source revision,
+and any benchmark records. After a runtime reset, rerun setup and the following
+cells. The notebook is stored without outputs; the notebook itself still needs
+a complete Colab run, although its underlying build and test commands have
+already been verified there.
 
 ## Optional CUDA build
 
@@ -156,6 +174,44 @@ rejects CUDA requests with an error rather than silently using the CPU.
 CUDA builds also run a CLI test that selects CUDA on 257 samples.
 The CLI suite also checks the CSV example and header-only input with both backends.
 Performance results below describe one measured workload, not a general speedup.
+
+## GPU memory and synchronization checks
+
+In the Colab run dated October 20, 2026 UTC, all twelve CUDA test cases passed
+under NVIDIA Compute Sanitizer 2025.3.1.0 on a T4, using driver 580.82.07,
+CUDA Toolkit 13.0.88, GCC 13.3, and a Release build targeting architecture 75
+with source-line information enabled. Results were reported in the developer's
+Colab output; the original notebook remains the run record.
+
+| Tool | Reported result |
+|---|---|
+| memcheck, with full leak checking | 0 errors; 0 bytes leaked in 0 allocations |
+| racecheck | 0 hazards, 0 errors, 0 warnings |
+| initcheck | 0 errors |
+| synccheck | 0 errors |
+
+To repeat these checks from the repository root on a T4:
+
+```sh
+cmake -S . -B build-sanitizer \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DTELEMETRY_ENABLE_CUDA=ON \
+    -DBUILD_TESTING=ON \
+    -DCMAKE_CUDA_ARCHITECTURES=75 \
+    -DCMAKE_CUDA_FLAGS=-lineinfo
+cmake --build build-sanitizer --target telemetry_cuda_tests --parallel 2
+compute-sanitizer --tool memcheck --error-exitcode 1 --leak-check full ./build-sanitizer/telemetry_cuda_tests
+compute-sanitizer --tool racecheck --error-exitcode 1 ./build-sanitizer/telemetry_cuda_tests
+compute-sanitizer --tool initcheck --error-exitcode 1 ./build-sanitizer/telemetry_cuda_tests
+compute-sanitizer --tool synccheck --error-exitcode 1 ./build-sanitizer/telemetry_cuda_tests
+```
+
+Run each command only if the preceding command succeeds. The Colab demo
+automates this sequence and saves the output. The checks cover the executed
+test cases and hardware, not every possible input or GPU. Sanitizer timings
+are not benchmark results. See the
+[NVIDIA Compute Sanitizer guide](https://docs.nvidia.com/compute-sanitizer/ComputeSanitizer/index.html)
+for the tools' scope and options.
 
 ## Run
 
@@ -408,6 +464,7 @@ include/         CSV reader, generator, and validator interfaces
 src/             Implementations and command-line program
 tests/           Correctness tests
 benchmarks/      Python script for CPU/CUDA benchmark sweeps
+notebooks/       Colab demo with optional benchmarks and sanitizer checks
 data/            Example CSV input and saved benchmark results
 CMakeLists.txt   Build and test configuration
 ```
