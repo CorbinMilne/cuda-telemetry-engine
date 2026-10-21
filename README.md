@@ -40,6 +40,48 @@ Inputs use `float`; error calculations and accumulation use `double`.
 
 An error equal to the threshold is allowed. Invalid inputs, including NaN and infinity, are rejected. Empty inputs return zero statistics by convention.
 
+## Architecture
+
+This is a batch validator. The caller supplies measurements and their expected
+reference values, either through a CSV file or synthetic generation. The engine
+compares each pair; it does not learn the expected values from the measurements.
+
+```mermaid
+flowchart TD
+    Input[CSV file or synthetic generator] --> Arrays[CPU memory: measurements and references]
+    Arrays --> Backend{Selected backend}
+    Backend -->|cpu| CPU[CPU loop: validate each pair]
+    Backend -->|cuda| Copy[Copy both arrays to GPU memory]
+    Copy --> First[First kernel: one summary per block]
+    First --> Second[Second kernel: combine block summaries]
+    Second --> Return[Copy one summary to CPU and calculate MSE]
+    CPU --> Output[Validation results and timing]
+    Return --> Output
+```
+
+The input vectors own their memory. Both validators borrow views of those
+arrays through `std::span<const float>`, which avoids another CPU-side copy.
+The CUDA backend allocates separate GPU buffers and transfers both input arrays.
+
+Each active GPU thread checks one pair and calculates its absolute error.
+Within each 256-thread block, threads combine violation counts, maximum error,
+squared-error sums, and an invalid-input flag in shared memory. This combination
+is called a reduction. Threads without a sample contribute neutral values and
+still participate in the block's synchronization barriers.
+
+The second kernel reduces the block summaries to one summary. The CPU checks
+its invalid-input flag and divides the squared-error sum by the total sample
+count to calculate MSE. Dividing once gives every sample equal weight, even
+when the last block is only partly filled. Individual errors stay on the GPU;
+only the summary is copied back. C++ destructors release the GPU allocations
+when the validation call finishes or throws an exception.
+
+The CPU implementation is the correctness reference for CUDA tests. Input
+loading happens before the validation timer starts. Complete CUDA validation
+time includes allocations, transfers, kernels, and cleanup; the GPU kernel
+interval is reported separately. Python runs benchmark commands and collects
+records, while C++ and CUDA perform the validation.
+
 ## Requirements
 
 - C++20 compiler
